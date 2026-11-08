@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -8,9 +11,12 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final String studentName = 'أحمد';
+  final _secureStorage = const FlutterSecureStorage();
   
-  final List  announcements = [
+  // اسم الطالب يبدأ بـ "جاري التحميل..." ويتم تحديثه تلقائياً من الخادم
+  String studentName = 'جاري التحميل...';
+
+  final List announcements = [
     {
       'title': 'بدء التسجيل للفصل الدراسي القادم',
       'summary': 'نود إعلامكم ببدء فترة التسجيل للفصل الدراسي الربيعي ابتداءً من الأسبوع القادم. يرجى مراجعة موقع الجامعة.',
@@ -25,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
     },
   ];
 
-  final List  services = [
+  final List services = [
     {
       'name': 'IT Support',
       'description': 'الدعم الفني، مشاكل الشبكة، والصيانة التقنية.',
@@ -42,6 +48,74 @@ class _HomeScreenState extends State<HomeScreen> {
       'icon': Icons.school_rounded,
     },
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserName();
+  }
+
+  // دالة الاتصال بـ Laravel Backend لجلب بيانات المستخدم
+  Future<void> _fetchUserName() async {
+    try {
+      final token = await _secureStorage.read(key: 'auth_token');
+      if (token == null) {
+        if (mounted) {
+          setState(() {
+            studentName = 'زائر';
+          });
+        }
+        return;
+      }
+
+      final url = Uri.parse('http://127.0.0.1:8000/api/user');
+      
+      final response = await http.get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final decodedData = jsonDecode(response.body);
+        
+        Map<String, dynamic> userData = {};
+        if (decodedData is Map<String, dynamic>) {
+          if (decodedData.containsKey('user') && decodedData['user'] is Map) {
+            userData = Map<String, dynamic>.from(decodedData['user']);
+          } else if (decodedData.containsKey('data') && decodedData['data'] is Map) {
+            userData = Map<String, dynamic>.from(decodedData['data']);
+          } else {
+            userData = decodedData;
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            studentName = userData['name'] ?? 
+                          userData['full_name'] ?? 
+                          userData['username'] ?? 
+                          'طالب';
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            studentName = 'مستخدم';
+          });
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          studentName = 'مستخدم';
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             radius: 20,
                             backgroundColor: const Color(0xFFF97316),
                             child: Text(
-                              studentName.substring(0, 1),
+                              studentName.isNotEmpty ? studentName.substring(0, 1) : 'U',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontFamily: 'IBM Plex Sans Arabic',
@@ -508,13 +582,6 @@ class _CustomBottomNavBar extends StatelessWidget {
               onTap: () {
                 if (activeTabIndex != 0) {
                   Navigator.pushReplacementNamed(context, '/home');
-                } else {
-                  // If already on Home, scroll to top or refresh behavior
-                  Scrollable.ensureVisible(
-                    context,
-                    alignment: 0,
-                    duration: const Duration(milliseconds: 300),
-                  );
                 }
               },
             ),

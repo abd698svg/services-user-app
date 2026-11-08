@@ -25,7 +25,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _fetchUserData();
   }
 
-  Future<void> _fetchUserData() async {
+Future<void> _fetchUserData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -41,9 +41,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return;
       }
 
-      // Adjust URL based on your local backend environment:
-      // - Android Emulator: 'http://10.0.2.2:8000/api/user'
-      // - iOS Simulator / Desktop / Localhost: 'http://127.0.0.1:8000/api/user'
       final url = Uri.parse('http://127.0.0.1:8000/api/user');
       
       final response = await http.get(
@@ -56,20 +53,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        // Assuming Laravel returns user object directly or nested under 'user'
-        final userData = data['user'] ?? data;
+        final decodedData = jsonDecode(response.body);
+        
+        // استخراج بيانات المستخدم بمرونة بغض النظر عن طريقة إرجاعها من Laravel
+        Map<String, dynamic> userData = {};
+        if (decodedData is Map<String, dynamic>) {
+          if (decodedData.containsKey('user') && decodedData['user'] is Map) {
+            userData = Map<String, dynamic>.from(decodedData['user']);
+          } else if (decodedData.containsKey('data') && decodedData['data'] is Map) {
+            userData = Map<String, dynamic>.from(decodedData['data']);
+          } else {
+            userData = decodedData;
+          }
+        }
 
         if (mounted) {
           setState(() {
-            _userName = userData['name'] ?? 'مستخدم';
-            _userEmail = userData['email'] ?? '';
-            _studentId = userData['student_id']?.toString() ?? 'غير متوفر';
+            // البحث عن الاسم بأكثر من احتمال (name, full_name, username)
+            _userName = userData['name'] ?? 
+                        userData['full_name'] ?? 
+                        userData['username'] ?? 
+                        'مستخدم جامعي';
+                        
+            _userEmail = userData['email'] ?? 'البريد غير متوفر';
+            
+            _studentId = userData['student_id']?.toString() ?? 
+                         userData['id']?.toString() ?? 
+                         'غير متوفر';
+                         
             _isLoading = false;
           });
         }
       } else {
-        // Unauthorized or session expired
+        // انتهت صلاحية الجلسة أو التوكن غير صالح
         await _secureStorage.delete(key: 'auth_token');
         if (mounted) {
           Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
@@ -84,7 +100,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
   }
-
+  
   Future<void> _handleLogout() async {
     // Show loading indicator or dialog if needed
     try {
